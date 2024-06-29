@@ -719,7 +719,7 @@ float gpt2_validate(GPT2 *model, const int* inputs, const int* targets, size_t B
     gpt2_forward(model, inputs, B, T);
     // convenience shortcuts, size_t instead of int so that pointer arithmetics don't overflow
     const size_t V = model->config.vocab_size;
-    const size_t Vp = model->config.padded_vocab_size;
+    const size_t Vp = 50304;
 
     NvtxRange classifier_and_loss_range("classifier_and_loss");
     ActivationTensors acts = model->acts;
