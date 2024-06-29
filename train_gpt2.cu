@@ -1683,7 +1683,7 @@ int main(int argc, char *argv[]) {
         int last_step = step == train_num_batches;
 
         // once in a while estimate the validation loss (all processes collaborate)
-        if (step % val_loss_every == 0 || last_step) {
+        if (false) {
             NvtxRange validation_range("validation");
             float val_loss = 0.0f;
             dataloader_reset(&val_loader);
@@ -1698,8 +1698,7 @@ int main(int argc, char *argv[]) {
         }
 
         // once in a while estimate HellaSwag accuracy (all processes collaborate)
-        if (run_hellaswag &&
-           ((step > 0 && step % val_loss_every == 0) || last_step)) {
+        if (false) {
             NvtxRange evaluation_range("evaluation");
             float eval_acc_norm = 0.0f;
             evalloader_reset(&eval_loader);
