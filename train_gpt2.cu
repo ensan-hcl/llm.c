@@ -307,7 +307,7 @@ void fill_in_activation_sizes(const ActivationTensors* data, TensorSpec (&tensor
     tensors[17] = TENSOR_SPEC(data->lnf_rstd, B * T);
     tensors[18] = TENSOR_SPEC(data->losses, B * T);
     tensors[19] = TENSOR_SPEC(data->qkvr, L * B * T * 3*C);
-    tensors[20] = TENSOR_SPEC(data->output, B * T * Vp));
+    tensors[20] = TENSOR_SPEC(data->output, B * T * max(3*C, max(NH*T, Vp)));
 
     tensors[21] = TENSOR_SPEC(data->scratch_bt4c, B * T * 4 * C);
     tensors[22] = TENSOR_SPEC(data->scratch_btc, B * T * C);
