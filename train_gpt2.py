@@ -191,19 +191,22 @@ class GPT(nn.Module):
 
     @classmethod
     def from_pretrained(cls, model_type):
-        """Loads pretrained GPT-2 model weights from huggingface"""
-        assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
+        """Loads pretrained GPT-2 model weights from huggingface
+
+        - Additional Note by @ensan-hcl: I added a pretrained model for Japanese character GPT-2, where the vocab size is 6000.
+        """
+        assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl', 'ku-nlp/gpt2-small-japanese-char'}
         from transformers import GPT2LMHeadModel
         print("loading weights from pretrained gpt: %s" % model_type)
 
         # n_layer, n_head and n_embd are determined from model_type
         config_args = {
-            'gpt2':         dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
-            'gpt2-medium':  dict(n_layer=24, n_head=16, n_embd=1024), # 350M params
-            'gpt2-large':   dict(n_layer=36, n_head=20, n_embd=1280), # 774M params
-            'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600), # 1558M params
+            'gpt2':         dict(n_layer=12, n_head=12, n_embd=768, vocab_size=50257),  # 124M params
+            'gpt2-medium':  dict(n_layer=24, n_head=16, n_embd=1024, vocab_size=50257), # 350M params
+            'gpt2-large':   dict(n_layer=36, n_head=20, n_embd=1280, vocab_size=50257), # 774M params
+            'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600, vocab_size=50257), # 1558M params
+            'ku-nlp/gpt2-small-japanese-char': dict(n_layer=12, n_head=12, n_embd=768, vocab_size=6000), # 91M params
         }[model_type]
-        config_args['vocab_size'] = 50257 # always 50257 for GPT model checkpoints
         config_args['block_size'] = 1024 # always 1024 for GPT model checkpoints
         # create a from-scratch initialized minGPT model
         config = GPTConfig(**config_args)
@@ -434,10 +437,14 @@ def pad_vocab(tensor, multiple=128, value=0):
     friendlier multiple, e.g. 50,304 if multiple=128 when we
     export the weights into C land. This is a NOOP algorithmically
     and is only done to make the tensor operations more efficient.
+
+    - Additional Note by @ensan-hcl: for ku-nlp/gpt2-small-japanese-char, the vocab size is 6000.
+        In order to use the same padding function, I commented out the assertion of the vocab size.
+        The padding will 6016 (multiple=128 = 47*128) in this case.
     """
     assert tensor.ndim == 2
     V, C = tensor.shape
-    assert V == 50257, "just being defensive here"
+    # assert V == 50257, "just being defensive here"
     # calculate padded vocab size by rounding up to nearest multiple
     Vp = ((V + multiple - 1) // multiple) * multiple
     # pad the tensor
@@ -581,7 +588,8 @@ if __name__ == "__main__":
     B, T = args.batch_size, args.sequence_length
     assert 1 <= T <= 1024
     assert args.dtype in {"float32", "float16", "bfloat16"}
-    assert args.model in {"gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl", "d12", "d24", "d36", "d48"}
+    # Note by @ensan-hcl: I added a pretrained model named "ku-nlp/gpt2-small-japanese-char"
+    assert args.model in {"gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl", "d12", "d24", "d36", "d48", "ku-nlp/gpt2-small-japanese-char"}
 
     # set up DDP (distributed data parallel). torchrun sets this env variable
     ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
@@ -688,7 +696,13 @@ if __name__ == "__main__":
         logits, loss = model(x, y)
         loss.backward()
         # save model params, in both float32 and bfloat16
-        model_to_size = {"gpt2": "124M", "gpt2-medium": "355M", "gpt2-large": "774M", "gpt2-xl": "1558M"}
+        model_to_size = {
+            "gpt2": "124M",
+            "gpt2-medium": "355M",
+            "gpt2-large": "774M",
+            "gpt2-xl": "1558M",
+            "ku-nlp/gpt2-small-japanese-char": "91M",
+        }
         model_to_size.update({f"d{d}": f"d{d}" for d in [12, 24, 36, 48]})
         model_size_str = model_to_size[args.model] # e.g. "124M", or "d12"
         write_model(model, f"gpt2_{model_size_str}.bin", dtype="float32")
