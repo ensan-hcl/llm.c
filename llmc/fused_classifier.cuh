@@ -141,7 +141,8 @@ void fused_classifier(Type* logits, float* losses,
                       const float dloss, const int* targets,
                       int B, int T, int V, int P, std::bool_constant<WriteDLogits> write_dlogits, cudaStream_t stream) {
     NVTX_RANGE_FN();
-    const int block_size = 1024;
+    // Note by @ensan-hcl: The block size was originally 1024, but it was changed to 512 to avoid hanging in V=6000 (P=6016) case
+    const int block_size = 512;
     const int N = B * T;
     const int grid_size = N;
     fused_classifier_kernel5<<<grid_size, block_size, 0, stream>>>(logits, losses, (floatX*)NULL, dloss, targets, B, T, V, P, write_dlogits);
