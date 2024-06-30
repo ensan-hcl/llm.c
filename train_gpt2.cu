@@ -730,18 +730,12 @@ float gpt2_validate(GPT2 *model, const int* inputs, const int* targets, size_t B
     cudaCheck(cudaMemset(acts.losses, 0, B*T*sizeof(float)));
     cudaCheck(cudaMemcpy(model->targets, targets, B * T * sizeof(int), cudaMemcpyHostToDevice));
     tokenCheck(targets, B*T, V); // while the memcpy is underway, validate the targets
-    printf0("fused_classifier\n");
     fused_classifier(acts.output, acts.losses, dloss, model->targets, B, T, V, Vp, False, main_stream);
-    printf0("fused_classifier done\n");
-    printf0("cudaMemcpy\n");
     cudaCheck(cudaMemcpy(model->cpu_losses, acts.losses, B * T * sizeof(float), cudaMemcpyDeviceToHost));
-    printf0("cudaMemcpy done\n");
-    printf0("cudaDeviceSynchronize\n");
     for (int i = 0; i < B*T; i++) {
         mean_loss += model->cpu_losses[i];
     }
     mean_loss /= B*T;
-    printf0("cudaDeviceSynchronize done\n");
     cudaCheck(cudaDeviceSynchronize());
     return mean_loss;
 }
