@@ -514,16 +514,25 @@ def write_state(model, x, y, logits, loss, filename):
     print(f"wrote {filename}")
 
 def write_tokenizer(enc, filename):
-    n = enc.max_token_value + 1
+    if type(enc) == tiktoken.Encoding:
+        n = enc.max_token_value + 1
+        eos_token = enc.eot_token
+    else:
+        n = enc.vocab_size
+        eos_token = enc.eos_token_id
     header = torch.zeros(256, dtype=torch.int32)
     header[0] = 20240328 # magic
     header[1] = 2 # tokenizer version = 2 (1 -> 2: includes EOT token)
     header[2] = n # number of tokens
-    header[3] = enc.eot_token # EOT token
+    header[3] = eos_token # EOT token
+
     with open(filename, "wb") as file:
         file.write(header.numpy().tobytes())
         for i in range(n):
-            b = enc.decode_bytes([i])
+            if type(enc) == tiktoken.Encoding:
+                b = enc.decode_bytes([i])
+            else:
+                b = enc.decode([i]).encode("utf-8")
             length = len(b)
             assert length < 256, f"Token length exceeds 255: {length}"
             file.write(struct.pack("<B", length))  # Write the length as a 1-byte unsigned integer
@@ -552,7 +561,7 @@ if __name__ == "__main__":
     parser.add_argument("--input_bin", type=str, default="dev/data/tinyshakespeare/tiny_shakespeare_val.bin", help="input .bin to train on")
     parser.add_argument("--input_val_bin", type=str, default="", help="input .bin to eval validation loss on")
     parser.add_argument("--output_dir", type=str, default="", help="output directory to which to write logs and checkpoints")
-    parser.add_argument("--model", type=str, default="gpt2", help="gpt2|gpt2-medium|gpt2-large|gpt2-xl|d12|d24|d36|d48")
+    parser.add_argument("--model", type=str, default="gpt2", help="gpt2|gpt2-medium|gpt2-large|gpt2-xl|d12|d24|d36|d48|ku-nlp/gpt2-small-japanese-char")
     # token layout for each step of the optimization
     parser.add_argument("--batch_size", type=int, default=4, help="batch size, in units of #batch dimensions")
     parser.add_argument("--sequence_length", type=int, default=64, help="sequence length")
@@ -652,7 +661,11 @@ if __name__ == "__main__":
     FLASH = args.flash
 
     # init (and write) the tokenizer
-    enc = tiktoken.get_encoding("gpt2")
+    if args.model == "ku-nlp/gpt2-small-japanese-char":
+        from transformers import AutoTokenizer
+        enc = AutoTokenizer.from_pretrained(args.model)
+    else:
+        enc = tiktoken.get_encoding("gpt2")
     if master_process and args.write_tensors: # tokenizer is technically not tensors but ok
         write_tokenizer(enc, "gpt2_tokenizer.bin")
 
