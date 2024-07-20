@@ -1,37 +1,37 @@
-"""
-Tokenizes a text dataset using HuggingFace's AutoTokenizer.
-- The tokenization is GPT-2 tokenizer with ku-nlp/gpt2-small-japanese-char.
-
-The script prints:
-
-Saved 32768 tokens to <val_output_file>
-Saved <remaining_tokens> tokens to <train_output_file>
-
-The .bin files are raw byte streams of int32 numbers indicating the token ids.
-"""
-
 import os
 import argparse
 from transformers import AutoTokenizer
-import numpy as np
 from data_common import write_datafile
 
 # -----------------------------------------------------------------------------
 DATA_CACHE_DIR = os.path.join(os.path.dirname(__file__), "japanese_data")
 
 tokenizer = AutoTokenizer.from_pretrained("ku-nlp/gpt2-small-japanese-char")
-encode = lambda s: tokenizer.encode(s)
-
+def encode(s: str):
+    if s.startswith("\uEE00"):
+        s = s + "</s>"
+    else:
+        s = "<s>" + s + "</s>"
+    e = tokenizer.encode(s, max_length=192, truncation=True, padding='max_length', pad_to_max_length=True)
+    return e
 
 def tokenize(input_file, val_filename, train_filename):
-    text = open(input_file, "r", encoding="utf-8").read()
-    tokens = encode(text)
-    val_tokens = tokens[:32768]
-    train_tokens = tokens[32768:]
-    write_datafile(val_filename, val_tokens)
-    write_datafile(train_filename, train_tokens)
-    print(f"Saved {len(val_tokens)} tokens to {val_filename}")
-    print(f"Saved {len(train_tokens)} tokens to {train_filename}")
+    with open(input_file, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    
+    train_lines = lines[:1400000]
+    val_lines = lines[1400000:]
+
+    train_tokens = [encode(line) for line in train_lines]
+    val_tokens = [encode(line) for line in val_lines]
+
+    train_tokens_flat = [token for sublist in train_tokens for token in sublist]
+    val_tokens_flat = [token for sublist in val_tokens for token in sublist]
+
+    write_datafile(val_filename, val_tokens_flat)
+    print(f"Saved {len(val_tokens_flat)} tokens to {val_filename}")
+    write_datafile(train_filename, train_tokens_flat)
+    print(f"Saved {len(train_tokens_flat)} tokens to {train_filename}")
 
 
 if __name__ == "__main__":
