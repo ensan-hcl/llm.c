@@ -195,19 +195,21 @@ class GPT(nn.Module):
 
         - Additional Note by @ensan-hcl: I added a pretrained model for Japanese character GPT-2, where the vocab size is 6000.
         """
-        assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl', 'ku-nlp/gpt2-small-japanese-char'}
+        assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl', 'ku-nlp/gpt2-xsmall-japanese-char', 'ku-nlp/gpt2-small-japanese-char', 'ku-nlp/gpt2-medium-japanese-char', 'ku-nlp/gpt2-large-japanese-char'}
         from transformers import GPT2LMHeadModel
         print("loading weights from pretrained gpt: %s" % model_type)
 
         # n_layer, n_head and n_embd are determined from model_type
         config_args = {
-            'gpt2':         dict(n_layer=12, n_head=12, n_embd=768, vocab_size=50257),  # 124M params
-            'gpt2-medium':  dict(n_layer=24, n_head=16, n_embd=1024, vocab_size=50257), # 350M params
-            'gpt2-large':   dict(n_layer=36, n_head=20, n_embd=1280, vocab_size=50257), # 774M params
-            'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600, vocab_size=50257), # 1558M params
-            'ku-nlp/gpt2-small-japanese-char': dict(n_layer=12, n_head=12, n_embd=768, vocab_size=6000), # 91M params
+            'gpt2':         dict(n_layer=12, n_head=12, n_embd=768, vocab_size=50257, block_size=1024),  # 124M params
+            'gpt2-medium':  dict(n_layer=24, n_head=16, n_embd=1024, vocab_size=50257, block_size=1024), # 350M params
+            'gpt2-large':   dict(n_layer=36, n_head=20, n_embd=1280, vocab_size=50257, block_size=1024), # 774M params
+            'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600, vocab_size=50257, block_size=1024), # 1558M params
+            'ku-nlp/gpt2-xsmall-japanese-char': dict(n_layer=6, n_head=8, n_embd=512, vocab_size=6000, block_size=1024), # 26M params
+            'ku-nlp/gpt2-small-japanese-char': dict(n_layer=12, n_head=12, n_embd=768, vocab_size=6000, block_size=1024), # 91M params
+            'ku-nlp/gpt2-medium-japanese-char': dict(n_layer=24, n_head=16, n_embd=1024, vocab_size=6000, block_size=1024), # 310M params
+            'ku-nlp/gpt2-large-japanese-char': dict(n_layer=36, n_head=20, n_embd=1280, vocab_size=6000, block_size=1024), # 717M params
         }[model_type]
-        config_args['block_size'] = 1024 # always 1024 for GPT model checkpoints
         # create a from-scratch initialized minGPT model
         config = GPTConfig(**config_args)
         model = GPT(config)
@@ -438,7 +440,7 @@ def pad_vocab(tensor, multiple=128, value=0):
     export the weights into C land. This is a NOOP algorithmically
     and is only done to make the tensor operations more efficient.
 
-    - Additional Note by @ensan-hcl: for ku-nlp/gpt2-small-japanese-char, the vocab size is 6000.
+    - Additional Note by @ensan-hcl: for ku-nlp/gpt2-{small|medium}-japanese-char, the vocab size is 6000.
         In order to use the same padding function, I commented out the assertion of the vocab size.
         The padding will 6016 (multiple=128 = 47*128) in this case.
     """
@@ -561,7 +563,7 @@ if __name__ == "__main__":
     parser.add_argument("--input_bin", type=str, default="dev/data/tinyshakespeare/tiny_shakespeare_val.bin", help="input .bin to train on")
     parser.add_argument("--input_val_bin", type=str, default="", help="input .bin to eval validation loss on")
     parser.add_argument("--output_dir", type=str, default="", help="output directory to which to write logs and checkpoints")
-    parser.add_argument("--model", type=str, default="gpt2", help="gpt2|gpt2-medium|gpt2-large|gpt2-xl|d12|d24|d36|d48|ku-nlp/gpt2-small-japanese-char")
+    parser.add_argument("--model", type=str, default="gpt2", help="gpt2|gpt2-medium|gpt2-large|gpt2-xl|d12|d24|d36|d48|ku-nlp/gpt2-xsmall-japanese-char|ku-nlp/gpt2-small-japanese-char|ku-nlp/gpt2-medium-japanese-char|ku-nlp/gpt2-large-japanese-char")
     # token layout for each step of the optimization
     parser.add_argument("--batch_size", type=int, default=4, help="batch size, in units of #batch dimensions")
     parser.add_argument("--sequence_length", type=int, default=64, help="sequence length")
@@ -597,8 +599,8 @@ if __name__ == "__main__":
     B, T = args.batch_size, args.sequence_length
     assert 1 <= T <= 1024
     assert args.dtype in {"float32", "float16", "bfloat16"}
-    # Note by @ensan-hcl: I added a pretrained model named "ku-nlp/gpt2-small-japanese-char"
-    assert args.model in {"gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl", "d12", "d24", "d36", "d48", "ku-nlp/gpt2-small-japanese-char"}
+    # Note by @ensan-hcl: I added a pretrained model named "ku-nlp/gpt2-{small|medium}-japanese-char"
+    assert args.model in {"gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl", "d12", "d24", "d36", "d48", "ku-nlp/gpt2-xsmall-japanese-char", "ku-nlp/gpt2-small-japanese-char", "ku-nlp/gpt2-medium-japanese-char", "ku-nlp/gpt2-large-japanese-char"}
 
     # set up DDP (distributed data parallel). torchrun sets this env variable
     ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
@@ -661,9 +663,12 @@ if __name__ == "__main__":
     FLASH = args.flash
 
     # init (and write) the tokenizer
-    if args.model == "ku-nlp/gpt2-small-japanese-char":
+    if args.model in ["ku-nlp/gpt2-small-japanese-char", "ku-nlp/gpt2-medium-japanese-char", "ku-nlp/gpt2-large-japanese-char"]:
         from transformers import AutoTokenizer
         enc = AutoTokenizer.from_pretrained(args.model)
+    elif args.model == "ku-nlp/gpt2-xsmall-japanese-char":
+        from transformers import AutoTokenizer
+        enc = AutoTokenizer.from_pretrained("ku-nlp/gpt2-small-japanese-char")
     else:
         enc = tiktoken.get_encoding("gpt2")
     if master_process and args.write_tensors: # tokenizer is technically not tensors but ok
@@ -679,6 +684,10 @@ if __name__ == "__main__":
             "d48": GPTConfig(block_size=1024, vocab_size=50257, n_layer=48, n_head=25, n_embd=1600),
         }[args.model]
         model = GPT(model_config)
+    elif args.model == "ku-nlp/gpt2-xsmall-japanese-char":
+        model_config = GPTConfig(block_size=1024, vocab_size=6000, n_layer=6, n_head=8, n_embd=512)
+        model = GPT(model_config)
+        print()
     else:
         # load the GPT-2 model weights
         model = GPT.from_pretrained(args.model)
@@ -714,7 +723,10 @@ if __name__ == "__main__":
             "gpt2-medium": "355M",
             "gpt2-large": "774M",
             "gpt2-xl": "1558M",
+            "ku-nlp/gpt2-xsmall-japanese-char": "26M",
             "ku-nlp/gpt2-small-japanese-char": "91M",
+            "ku-nlp/gpt2-medium-japanese-char": "310M",
+            "ku-nlp/gpt2-large-japanese-char": "717M",
         }
         model_to_size.update({f"d{d}": f"d{d}" for d in [12, 24, 36, 48]})
         model_size_str = model_to_size[args.model] # e.g. "124M", or "d12"
