@@ -352,7 +352,7 @@ void attention_backward(float* dinp, float* dpreatt, float* datt,
     // dout is (B, T, C)
     int C3 = C*3;
     int hs = C / NH; // head size
-    float scale = 1.0 / sqrtf(hs);
+    float scale = 1.f / sqrtf(hs);
 
     for (int b = 0; b < B; b++) {
         for (int t = 0; t < T; t++) {
@@ -1041,14 +1041,14 @@ void gpt2_free(GPT2 *model) {
 // ----------------------------------------------------------------------------
 // sampler
 
-unsigned int random_u32(unsigned long long *state) {
+unsigned int random_u32(uint64_t *state) {
     // xorshift rng: https://en.wikipedia.org/wiki/Xorshift#xorshift.2A
     *state ^= *state >> 12;
     *state ^= *state << 25;
     *state ^= *state >> 27;
     return (*state * 0x2545F4914F6CDD1Dull) >> 32;
 }
-float random_f32(unsigned long long *state) { // random float32 in [0,1)
+float random_f32(uint64_t *state) { // random float32 in [0,1)
     return (random_u32(state) >> 8) / 16777216.0f;
 }
 
@@ -1071,15 +1071,11 @@ int main() {
 
     // build the GPT-2 model from a checkpoint
     GPT2 model;
-    gpt2_build_from_checkpoint(&model, "gpt2_124M.bin");
+    gpt2_build_from_checkpoint(&model, "gpt2_91M.bin");
 
     // build the DataLoaders from tokens files. for now use tiny_shakespeare if available, else tiny_stories
-    const char* tiny_stories_train = "dev/data/tinystories/TinyStories_train.bin";
-    const char* tiny_stories_val = "dev/data/tinystories/TinyStories_val.bin";
-    const char* tiny_shakespeare_train = "dev/data/tinyshakespeare/tiny_shakespeare_train.bin";
-    const char* tiny_shakespeare_val = "dev/data/tinyshakespeare/tiny_shakespeare_val.bin";
-    const char* train_tokens = access(tiny_shakespeare_train, F_OK) != -1 ? tiny_shakespeare_train : tiny_stories_train;
-    const char* val_tokens = access(tiny_shakespeare_val, F_OK) != -1 ? tiny_shakespeare_val : tiny_stories_val;
+    const char* train_tokens = "dev/data/japanese_data/japanese_data_train.bin";
+    const char* val_tokens = "dev/data/japanese_data/japanese_data_val.bin";
     int B = 4; // batch size 4 (i.e. 4 independent token sequences will be trained on)
     int T = 64; // sequence length 64 (i.e. each sequence is 64 tokens long). must be <= maxT, which is 1024 for GPT-2
     DataLoader train_loader, val_loader;
@@ -1094,7 +1090,7 @@ int main() {
     tokenizer_init(&tokenizer, "gpt2_tokenizer.bin");
 
     // some memory for generating samples from the model
-    unsigned long long rng_state = 1337;
+    uint64_t rng_state = 1337;
     int* gen_tokens = (int*)mallocCheck(B * T * sizeof(int));
     const int genT = 64; // number of steps of inference we will do
 

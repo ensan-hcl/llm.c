@@ -191,20 +191,25 @@ class GPT(nn.Module):
 
     @classmethod
     def from_pretrained(cls, model_type):
-        """Loads pretrained GPT-2 model weights from huggingface"""
-        assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
+        """Loads pretrained GPT-2 model weights from huggingface
+
+        - Additional Note by @ensan-hcl: I added a pretrained model for Japanese character GPT-2, where the vocab size is 6000.
+        """
+        assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl', 'ku-nlp/gpt2-xsmall-japanese-char', 'ku-nlp/gpt2-small-japanese-char', 'ku-nlp/gpt2-medium-japanese-char', 'ku-nlp/gpt2-large-japanese-char'}
         from transformers import GPT2LMHeadModel
         print("loading weights from pretrained gpt: %s" % model_type)
 
         # n_layer, n_head and n_embd are determined from model_type
         config_args = {
-            'gpt2':         dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
-            'gpt2-medium':  dict(n_layer=24, n_head=16, n_embd=1024), # 350M params
-            'gpt2-large':   dict(n_layer=36, n_head=20, n_embd=1280), # 774M params
-            'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600), # 1558M params
+            'gpt2':         dict(n_layer=12, n_head=12, n_embd=768, vocab_size=50257, block_size=1024),  # 124M params
+            'gpt2-medium':  dict(n_layer=24, n_head=16, n_embd=1024, vocab_size=50257, block_size=1024), # 350M params
+            'gpt2-large':   dict(n_layer=36, n_head=20, n_embd=1280, vocab_size=50257, block_size=1024), # 774M params
+            'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600, vocab_size=50257, block_size=1024), # 1558M params
+            'ku-nlp/gpt2-xsmall-japanese-char': dict(n_layer=6, n_head=8, n_embd=512, vocab_size=6000, block_size=1024), # 26M params
+            'ku-nlp/gpt2-small-japanese-char': dict(n_layer=12, n_head=12, n_embd=768, vocab_size=6000, block_size=1024), # 91M params
+            'ku-nlp/gpt2-medium-japanese-char': dict(n_layer=24, n_head=16, n_embd=1024, vocab_size=6000, block_size=1024), # 310M params
+            'ku-nlp/gpt2-large-japanese-char': dict(n_layer=36, n_head=20, n_embd=1280, vocab_size=6000, block_size=1024), # 717M params
         }[model_type]
-        config_args['vocab_size'] = 50257 # always 50257 for GPT model checkpoints
-        config_args['block_size'] = 1024 # always 1024 for GPT model checkpoints
         # create a from-scratch initialized minGPT model
         config = GPTConfig(**config_args)
         model = GPT(config)
@@ -434,10 +439,14 @@ def pad_vocab(tensor, multiple=128, value=0):
     friendlier multiple, e.g. 50,304 if multiple=128 when we
     export the weights into C land. This is a NOOP algorithmically
     and is only done to make the tensor operations more efficient.
+
+    - Additional Note by @ensan-hcl: for ku-nlp/gpt2-{small|medium}-japanese-char, the vocab size is 6000.
+        In order to use the same padding function, I commented out the assertion of the vocab size.
+        The padding will 6016 (multiple=128 = 47*128) in this case.
     """
     assert tensor.ndim == 2
     V, C = tensor.shape
-    assert V == 50257, "just being defensive here"
+    # assert V == 50257, "just being defensive here"
     # calculate padded vocab size by rounding up to nearest multiple
     Vp = ((V + multiple - 1) // multiple) * multiple
     # pad the tensor
@@ -507,16 +516,25 @@ def write_state(model, x, y, logits, loss, filename):
     print(f"wrote {filename}")
 
 def write_tokenizer(enc, filename):
-    n = enc.max_token_value + 1
+    if type(enc) == tiktoken.Encoding:
+        n = enc.max_token_value + 1
+        eos_token = enc.eot_token
+    else:
+        n = enc.vocab_size
+        eos_token = enc.eos_token_id
     header = torch.zeros(256, dtype=torch.int32)
     header[0] = 20240328 # magic
     header[1] = 2 # tokenizer version = 2 (1 -> 2: includes EOT token)
     header[2] = n # number of tokens
-    header[3] = enc.eot_token # EOT token
+    header[3] = eos_token # EOT token
+
     with open(filename, "wb") as file:
         file.write(header.numpy().tobytes())
         for i in range(n):
-            b = enc.decode_bytes([i])
+            if type(enc) == tiktoken.Encoding:
+                b = enc.decode_bytes([i])
+            else:
+                b = enc.decode([i]).encode("utf-8")
             length = len(b)
             assert length < 256, f"Token length exceeds 255: {length}"
             file.write(struct.pack("<B", length))  # Write the length as a 1-byte unsigned integer
@@ -545,7 +563,7 @@ if __name__ == "__main__":
     parser.add_argument("--input_bin", type=str, default="dev/data/tinyshakespeare/tiny_shakespeare_val.bin", help="input .bin to train on")
     parser.add_argument("--input_val_bin", type=str, default="", help="input .bin to eval validation loss on")
     parser.add_argument("--output_dir", type=str, default="", help="output directory to which to write logs and checkpoints")
-    parser.add_argument("--model", type=str, default="gpt2", help="gpt2|gpt2-medium|gpt2-large|gpt2-xl|d12|d24|d36|d48")
+    parser.add_argument("--model", type=str, default="gpt2", help="gpt2|gpt2-medium|gpt2-large|gpt2-xl|d12|d24|d36|d48|ku-nlp/gpt2-xsmall-japanese-char|ku-nlp/gpt2-small-japanese-char|ku-nlp/gpt2-medium-japanese-char|ku-nlp/gpt2-large-japanese-char")
     # token layout for each step of the optimization
     parser.add_argument("--batch_size", type=int, default=4, help="batch size, in units of #batch dimensions")
     parser.add_argument("--sequence_length", type=int, default=64, help="sequence length")
@@ -581,7 +599,8 @@ if __name__ == "__main__":
     B, T = args.batch_size, args.sequence_length
     assert 1 <= T <= 1024
     assert args.dtype in {"float32", "float16", "bfloat16"}
-    assert args.model in {"gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl", "d12", "d24", "d36", "d48"}
+    # Note by @ensan-hcl: I added a pretrained model named "ku-nlp/gpt2-{small|medium}-japanese-char"
+    assert args.model in {"gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl", "d12", "d24", "d36", "d48", "ku-nlp/gpt2-xsmall-japanese-char", "ku-nlp/gpt2-small-japanese-char", "ku-nlp/gpt2-medium-japanese-char", "ku-nlp/gpt2-large-japanese-char"}
 
     # set up DDP (distributed data parallel). torchrun sets this env variable
     ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
@@ -644,7 +663,14 @@ if __name__ == "__main__":
     FLASH = args.flash
 
     # init (and write) the tokenizer
-    enc = tiktoken.get_encoding("gpt2")
+    if args.model in ["ku-nlp/gpt2-small-japanese-char", "ku-nlp/gpt2-medium-japanese-char", "ku-nlp/gpt2-large-japanese-char"]:
+        from transformers import AutoTokenizer
+        enc = AutoTokenizer.from_pretrained(args.model)
+    elif args.model == "ku-nlp/gpt2-xsmall-japanese-char":
+        from transformers import AutoTokenizer
+        enc = AutoTokenizer.from_pretrained("ku-nlp/gpt2-small-japanese-char")
+    else:
+        enc = tiktoken.get_encoding("gpt2")
     if master_process and args.write_tensors: # tokenizer is technically not tensors but ok
         write_tokenizer(enc, "gpt2_tokenizer.bin")
 
@@ -658,6 +684,10 @@ if __name__ == "__main__":
             "d48": GPTConfig(block_size=1024, vocab_size=50257, n_layer=48, n_head=25, n_embd=1600),
         }[args.model]
         model = GPT(model_config)
+    elif args.model == "ku-nlp/gpt2-xsmall-japanese-char":
+        model_config = GPTConfig(block_size=1024, vocab_size=6000, n_layer=6, n_head=8, n_embd=512)
+        model = GPT(model_config)
+        print()
     else:
         # load the GPT-2 model weights
         model = GPT.from_pretrained(args.model)
@@ -688,7 +718,16 @@ if __name__ == "__main__":
         logits, loss = model(x, y)
         loss.backward()
         # save model params, in both float32 and bfloat16
-        model_to_size = {"gpt2": "124M", "gpt2-medium": "355M", "gpt2-large": "774M", "gpt2-xl": "1558M"}
+        model_to_size = {
+            "gpt2": "124M",
+            "gpt2-medium": "355M",
+            "gpt2-large": "774M",
+            "gpt2-xl": "1558M",
+            "ku-nlp/gpt2-xsmall-japanese-char": "26M",
+            "ku-nlp/gpt2-small-japanese-char": "91M",
+            "ku-nlp/gpt2-medium-japanese-char": "310M",
+            "ku-nlp/gpt2-large-japanese-char": "717M",
+        }
         model_to_size.update({f"d{d}": f"d{d}" for d in [12, 24, 36, 48]})
         model_size_str = model_to_size[args.model] # e.g. "124M", or "d12"
         write_model(model, f"gpt2_{model_size_str}.bin", dtype="float32")
@@ -698,10 +737,6 @@ if __name__ == "__main__":
         write_state(model, x, y, logits, loss, f"gpt2_{model_size_str}_debug_state.bin")
         # reset the train_loader for the optimization below
         train_loader.reset()
-        # clear the grads here explicitly because otherwise we'd have a duplicate grad accumulation
-        # since in the training loop we do a backward() and then zero_grad() at the end of the loop
-        # this would cause an incorrect first training step
-        model.zero_grad()
 
     # -------------------------------------------------------------------------
     # main training loop
@@ -794,14 +829,16 @@ if __name__ == "__main__":
 
         # --------------- TRAINING SECTION BEGIN -----------------
         model.train()
+        optimizer.zero_grad(set_to_none=True)
+        # if we are trying to overfit a single batch, we reset the loader here
+        if args.overfit_single_batch:
+            train_loader.reset()
         # micro-batch loop where we do gradient accumulation to reach desired total batch size
         lossf = 0.0 # for getting the mean loss (as simple float) over the accumulation steps
         for micro_step in range(grad_accum_steps):
             # fetch a batch
-            if not args.overfit_single_batch \
-                or (args.overfit_single_batch and step == 0 and micro_step == 0):
-                x, y = train_loader.next_batch()
-                x, y = x.to(device), y.to(device)
+            x, y = train_loader.next_batch()
+            x, y = x.to(device), y.to(device)
             if ddp:
                 # we want only the last micro-step to sync grads in a DDP model
                 # the official way to do this is with model.no_sync(), but that is a
@@ -829,7 +866,6 @@ if __name__ == "__main__":
             param_group['lr'] = lr
         # step the optimizer
         optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
         # --------------- TRAINING SECTION END -------------------
         # everything that follows now is just diagnostics, prints, logging, etc.
 

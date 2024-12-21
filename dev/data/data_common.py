@@ -23,7 +23,7 @@ def download_file(url: str, fname: str, chunk_size=1024):
             bar.update(size)
 
 
-def write_datafile(filename, toks):
+def write_datafile(filename, toks, maxtok=2**16):
     """
     Saves token data as a .bin file, for reading in C.
     - First comes a header with 256 int32s
@@ -38,7 +38,6 @@ def write_datafile(filename, toks):
     # construct the tokens numpy array, if not already
     if not isinstance(toks, np.ndarray) or not toks.dtype == np.uint16:
         # validate that no token exceeds a uint16
-        maxtok = 2**16
         assert all(0 <= t < maxtok for t in toks), "token dictionary too large for uint16"
         toks_np = np.array(toks, dtype=np.uint16)
     else:
